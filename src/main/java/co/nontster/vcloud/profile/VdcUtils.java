@@ -1,0 +1,294 @@
+package co.nontster.vcloud.profile;
+
+import java.util.List;
+import java.util.Properties;
+import java.util.concurrent.TimeoutException;
+
+import org.apache.commons.lang3.RandomStringUtils;
+
+import com.vmware.vcloud.api.rest.schema.CapacityWithUsageType;
+import com.vmware.vcloud.api.rest.schema.ComputeCapacityType;
+import com.vmware.vcloud.api.rest.schema.CreateVdcParamsType;
+import com.vmware.vcloud.api.rest.schema.ProviderVdcStorageProfilesType;
+import com.vmware.vcloud.api.rest.schema.ReferenceType;
+import com.vmware.vcloud.api.rest.schema.VdcStorageProfileParamsType;
+import com.vmware.vcloud.model.OrderType;
+import com.vmware.vcloud.model.VCloudOrganization;
+import com.vmware.vcloud.sdk.Organization;
+import com.vmware.vcloud.sdk.Task;
+import com.vmware.vcloud.sdk.VCloudException;
+import com.vmware.vcloud.sdk.VcloudClient;
+import com.vmware.vcloud.sdk.Vdc;
+import com.vmware.vcloud.sdk.admin.AdminOrganization;
+import com.vmware.vcloud.sdk.admin.AdminVdc;
+import com.vmware.vcloud.sdk.admin.ProviderVdc;
+import com.vmware.vcloud.sdk.admin.ProviderVdcStorageProfile;
+import com.vmware.vcloud.sdk.admin.VcloudAdmin;
+import com.vmware.vcloud.sdk.constants.AllocationModelType;
+
+public class VdcUtils {
+	
+	/**
+	 * Adding the pay as you go vdc.
+	 * 
+	 * @param adminClient
+	 * @param adminOrg
+	 * @throws VCloudException
+	 * @throws TimeoutException
+	 */
+	static AdminVdc addPayAsYouGoVdc(VCloudOrganization org, VcloudAdmin adminClient, VcloudClient client, AdminOrganization adminOrg, Properties prop)
+			throws VCloudException, TimeoutException {
+		CreateVdcParamsType createVdcParams = new CreateVdcParamsType();
+
+		// Select Provider VDC
+		String providerVdc = null;
+		
+		if(org.getCloudResources() != null && org.getCloudResources().getProviderVdc() != null && org.getCloudResources().getProviderVdc().getName() != null)
+			providerVdc = org.getCloudResources().getProviderVdc().getName();
+		else
+			providerVdc = prop.getProperty("providerVdc");
+				
+		ReferenceType pvdcRef = adminClient.getProviderVdcRefByName(providerVdc);
+		createVdcParams.setProviderVdcReference(pvdcRef);
+		ProviderVdc pvdc = ProviderVdc.getProviderVdcByReference(client, pvdcRef);
+
+		// Select Allocation Model - 'Pay As You Go' Model
+		createVdcParams.setAllocationModel(AllocationModelType.ALLOCATIONVAPP.value());
+
+		// guaranteed 20% CPU/Memory resources
+		
+		Float resourceGuaranteedCpu = null;
+		Float resourceGuaranteedMemory = null;
+		
+		if(org.getVdc() != null && org.getVdc().getResourceGuaranteedCpu() != null)
+			resourceGuaranteedCpu = org.getVdc().getResourceGuaranteedCpu();
+		else
+			resourceGuaranteedCpu = new Float(0.2);
+		
+		if(org.getVdc() != null && org.getVdc().getResourceGuaranteedMemory() != null)
+			resourceGuaranteedMemory = org.getVdc().getResourceGuaranteedMemory();
+		else
+			resourceGuaranteedMemory = new Float(0.2);
+		
+		createVdcParams.setResourceGuaranteedCpu(Double.parseDouble(resourceGuaranteedCpu.toString())); 																											 																											
+		createVdcParams.setResourceGuaranteedMemory(Double.parseDouble(resourceGuaranteedMemory.toString())); 
+
+		// Rest all Defaults for the 'Pay As You Go Model' configuration.
+		// Compute Capacity -- this is needed. UI Uses defaults.
+		ComputeCapacityType computeCapacity = new ComputeCapacityType();
+		
+		// Setting CPU section
+		CapacityWithUsageType cpu = new CapacityWithUsageType();
+		
+		if (org.getVdc() != null 
+				&& org.getVdc().getComputeCapacity() != null
+				&& org.getVdc().getComputeCapacity().getCpu() != null
+				&& org.getVdc().getComputeCapacity().getCpu().getAllocated() != null)
+			cpu.setAllocated(new Long(org.getVdc().getComputeCapacity().getCpu().getAllocated()));
+		else
+			cpu.setAllocated(new Long(0));
+		
+		if (org.getVdc() != null 
+				&& org.getVdc().getComputeCapacity() != null
+				&& org.getVdc().getComputeCapacity().getCpu() != null
+				&& org.getVdc().getComputeCapacity().getCpu().getOverhead() != null)
+			cpu.setOverhead(new Long(org.getVdc().getComputeCapacity().getCpu().getOverhead()));
+		else
+			cpu.setOverhead(new Long(0));
+		
+		if (org.getVdc() != null 
+				&& org.getVdc().getComputeCapacity() != null
+				&& org.getVdc().getComputeCapacity().getCpu() != null
+				&& org.getVdc().getComputeCapacity().getCpu().getUnits() != null)				
+			cpu.setUnits(org.getVdc().getComputeCapacity().getCpu().getUnits());
+		else
+			cpu.setUnits("MHz");
+		
+		if (org.getVdc() != null 
+				&& org.getVdc().getComputeCapacity() != null
+				&& org.getVdc().getComputeCapacity().getCpu() != null
+				&& org.getVdc().getComputeCapacity().getCpu().getUsed() != null)				
+			cpu.setUsed(new Long(org.getVdc().getComputeCapacity().getCpu().getUsed()));		
+		else
+			cpu.setUsed(new Long(0));
+		
+		if (org.getVdc() != null 
+				&& org.getVdc().getComputeCapacity() != null
+				&& org.getVdc().getComputeCapacity().getCpu() != null
+				&& org.getVdc().getComputeCapacity().getCpu().getLimit() != null)				
+			cpu.setLimit(org.getVdc().getComputeCapacity().getCpu().getLimit());
+		else
+			cpu.setLimit(new Long(0));
+				
+		computeCapacity.setCpu(cpu);
+
+		// Setting Memory section
+		CapacityWithUsageType mem = new CapacityWithUsageType();
+		
+		if (org.getVdc() != null 
+				&& org.getVdc().getComputeCapacity() != null
+				&& org.getVdc().getComputeCapacity().getMemory() != null
+				&& org.getVdc().getComputeCapacity().getMemory().getAllocated() != null)			
+			mem.setAllocated(new Long(org.getVdc().getComputeCapacity().getMemory().getAllocated()));		
+		else
+			mem.setAllocated(new Long(0));
+		
+		if (org.getVdc() != null 
+				&& org.getVdc().getComputeCapacity() != null
+				&& org.getVdc().getComputeCapacity().getMemory() != null
+				&& org.getVdc().getComputeCapacity().getMemory().getOverhead() != null)		
+			mem.setOverhead(new Long(org.getVdc().getComputeCapacity().getMemory().getOverhead()));
+		else
+			mem.setOverhead(new Long(0));
+		
+		if (org.getVdc() != null 
+				&& org.getVdc().getComputeCapacity() != null
+				&& org.getVdc().getComputeCapacity().getMemory() != null
+				&& org.getVdc().getComputeCapacity().getMemory().getUnits() != null)					
+			mem.setUnits(org.getVdc().getComputeCapacity().getMemory().getUnits());
+		else
+			mem.setUnits("MB");
+		
+		if (org.getVdc() != null 
+				&& org.getVdc().getComputeCapacity() != null
+				&& org.getVdc().getComputeCapacity().getMemory() != null
+				&& org.getVdc().getComputeCapacity().getMemory().getUsed() != null)			
+			mem.setUsed(new Long(org.getVdc().getComputeCapacity().getMemory().getUsed()));
+		else
+			mem.setUsed(new Long(0));
+
+		if (org.getVdc() != null 
+				&& org.getVdc().getComputeCapacity() != null
+				&& org.getVdc().getComputeCapacity().getMemory() != null
+				&& org.getVdc().getComputeCapacity().getMemory().getLimit() != null)
+			mem.setLimit(org.getVdc().getComputeCapacity().getMemory().getLimit());
+		else
+			mem.setLimit(new Long(0));
+		
+		computeCapacity.setMemory(mem);
+
+		createVdcParams.setComputeCapacity(computeCapacity);
+
+		// Select Network Pool
+		String networkPool = null;
+		
+		if (org.getCloudResources() != null 
+				&& org.getCloudResources().getNetworkPool() != null
+				&& org.getCloudResources().getNetworkPool().getName() != null)
+			networkPool = org.getCloudResources().getNetworkPool().getName();
+		else
+			networkPool = prop.getProperty("networkPool");
+		
+		// Set network pool
+		ReferenceType netPoolRef = pvdc.getVMWNetworkPoolRefByName(networkPool);
+		createVdcParams.setNetworkPoolReference(netPoolRef);
+		
+		// Set network quota
+		if(org.getVdc() != null && org.getVdc().getNetworkQuota() != null)
+			createVdcParams.setNetworkQuota(org.getVdc().getNetworkQuota());
+		else
+			createVdcParams.setNetworkQuota(1);
+						
+		// Name this Organization vDC		
+		if(org.getVdc() != null && org.getVdc().getName() != null)
+			createVdcParams.setName(org.getVdc().getName());
+		else {
+			String orgName = generateVdcName(org);
+
+			createVdcParams.setName(orgName);
+			
+			// org.getVdc().getName() will be later used in main()
+			if (org.getVdc() == null) {
+				com.vmware.vcloud.model.Vdc vdc = new com.vmware.vcloud.model.Vdc();
+				org.setVdc(vdc);
+			}
+
+			org.getVdc().setName(orgName);
+		}
+		
+		// Set VDC description
+		if(org.getVdc() != null && org.getVdc().getDescription() != null)						
+			createVdcParams.setDescription(org.getVdc().getDescription());
+		else
+			createVdcParams.setDescription("VDC for " + org.getFullName());
+		
+		// Is VDC enable by default
+		if(org.getVdc() != null && org.getVdc().isEnabled() != null)	
+			createVdcParams.setIsEnabled(org.getVdc().isEnabled());
+		else
+			createVdcParams.setIsEnabled(Boolean.TRUE);
+
+		// Setting vdcStorageProfile
+		VdcStorageProfileParamsType vdcStorageProfile = new VdcStorageProfileParamsType();
+		
+		if (org.getVdc() != null 
+				&& org.getVdc().getVdcStorageProfile() != null
+				&& org.getVdc().getVdcStorageProfile().isEnabled() != null)
+			vdcStorageProfile.setEnabled(org.getVdc().getVdcStorageProfile().isEnabled());
+		else
+			vdcStorageProfile.setEnabled(Boolean.TRUE);
+
+		if (org.getVdc() != null 
+				&& org.getVdc().getVdcStorageProfile() != null
+				&& org.getVdc().getVdcStorageProfile().isDef() != null)
+			vdcStorageProfile.setDefault(org.getVdc().getVdcStorageProfile().isDef());
+		else
+			vdcStorageProfile.setDefault(Boolean.TRUE);
+			
+		if (org.getVdc() != null 
+				&& org.getVdc().getVdcStorageProfile() != null
+				&& org.getVdc().getVdcStorageProfile().getLimit() != null)			
+			vdcStorageProfile.setLimit(org.getVdc().getVdcStorageProfile().getLimit());
+		else
+			vdcStorageProfile.setLimit(0);
+		
+		if (org.getVdc() != null 
+				&& org.getVdc().getVdcStorageProfile() != null
+				&& org.getVdc().getVdcStorageProfile().getUnits() != null)			
+			vdcStorageProfile.setUnits(org.getVdc().getVdcStorageProfile().getUnits());
+		else
+			vdcStorageProfile.setUnits("MB");
+				
+		for (ReferenceType providerVdcStorageProfileRef : pvdc.getProviderVdcStorageProfileRefs()) {
+			ProviderVdcStorageProfile providerStorageProfile = ProviderVdcStorageProfile
+					.getProviderVdcStorageProfileByReference(client, providerVdcStorageProfileRef);
+			if (providerStorageProfile.getResource().getName().equalsIgnoreCase(prop.getProperty("providerStorageProfile"))) {
+				vdcStorageProfile.setProviderVdcStorageProfile(providerVdcStorageProfileRef);
+				createVdcParams.getVdcStorageProfile().add(vdcStorageProfile);
+			}
+		}
+		// Only Thin Provision allow
+		createVdcParams.setIsThinProvision(Boolean.TRUE);
+
+		AdminVdc adminVdc = adminOrg.createAdminVdc(createVdcParams);
+
+		System.out.println("Creating Pay As You Go Vdc : " + adminVdc.getResource().getName() + " : "
+				+ adminVdc.getResource().getHref() + "\n");
+		List<Task> tasks = adminVdc.getTasks();
+		if (tasks.size() > 0)
+			tasks.get(0).waitForTask(0);
+		
+		return adminVdc;
+
+	}
+		
+	static String generateVdcName(VCloudOrganization org){
+		
+		String characters = "abcdefghijklmnopqrstuvwxyz0123456789";	
+		StringBuffer vdcName = new StringBuffer();
+		
+		if(org.getOrderType().name().equalsIgnoreCase(OrderType.TRIAL.name()))
+			vdcName.append("trial-");
+		else if(org.getOrderType().name().equalsIgnoreCase(OrderType.TEST.name()))
+			vdcName.append("test-");		
+		if(org.getShortName() != null && !org.getShortName().isEmpty())
+			vdcName.append(org.getShortName());
+		else
+			vdcName.append(RandomStringUtils.random( 6, characters ));
+		
+		vdcName.append("-vdc");
+		
+		return vdcName.toString();
+	}
+	
+}
